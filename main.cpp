@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory>
-#include <stack>
 #include <sstream>
+#include <stack>
 #include <string>
 #include <vector>
 
@@ -14,6 +14,7 @@ struct Node {
   std::vector<std::shared_ptr<Node>> children;
   std::vector<int> keys;
   std::weak_ptr<Node> parent;
+  int level = 0;
 
   Node(int order) : order(order) {
     children.reserve(order + 1);
@@ -54,11 +55,14 @@ void BTree::printTree() {
   using namespace std;
 
   std::stack<std::shared_ptr<Node>> explore;
-  vector<int> level;
+  int root_level = root->level;
   explore.emplace(root);
   while (!explore.empty()) {
     auto cur = explore.top();
     explore.pop();
+    for (int a = 0; a < root_level - cur->level; ++a) {
+      cout << "  ";
+    }
     cout << "(";
     for (int a = 0; a < cur->keys.size(); ++a) {
       if (a != 0) {
@@ -66,8 +70,8 @@ void BTree::printTree() {
       }
       cout << cur->keys[a];
     }
-    cout << ")";
-    for (auto it = cur->children.rbegin(); it!= cur->children.rend(); ++it) {
+    cout << ")" << endl;
+    for (auto it = cur->children.rbegin(); it != cur->children.rend(); ++it) {
       explore.emplace(*it);
     }
   }
@@ -101,6 +105,7 @@ void BTree::insert(int val) {
         parent = std::make_shared<Node>(order);
         parent->children.push_back(node);
         root = parent;
+        parent->level = node->level + 1;
       }
       if (node->is_leaf) {
         int middle_i = order / 2;
@@ -131,6 +136,7 @@ void BTree::insert(int val) {
 
         std::shared_ptr<Node> nl = std::make_shared<Node>(order);
         nl->parent = parent;
+        nl->level = node->level;
         nl->keys.assign(node->keys.begin(), node->keys.begin() + middle_i);
         node->keys.erase(node->keys.begin(), node->keys.begin() + middle_i + 1);
         nl->children.assign(node->children.begin(),
