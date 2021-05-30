@@ -1,22 +1,28 @@
 #include <iostream>
 #include <memory>
+#include <stack>
+#include <sstream>
+#include <string>
 #include <vector>
 
 struct Node;
 
 struct Node {
-  Node *parent = nullptr, *left = nullptr, *right = nullptr;
+  Node *right = nullptr;
   int order;
   bool is_leaf = false;
-  std::vector<std::unique_ptr<Node>> children;
+  std::vector<std::shared_ptr<Node>> children;
   std::vector<int> keys;
+  std::weak_ptr<Node> parent;
 
-  Node(int order) : order(order), children(order + 1), keys(order) {}
+  Node(int order) : order(order) {
+    children.reserve(order + 1);
+    keys.reserve(order);
+  }
   Node(const Node &old) {
-    // children = old.children;
+    children = old.children;
     keys = old.keys;
     parent = old.parent;
-    left = old.left;
     right = old.right;
     order = old.order;
   }
@@ -28,36 +34,60 @@ class BTree {
   ~BTree();
   BTree(const BTree &old);
   void insert(int val);
-  Node *search(int val);
-  Node *traverse(int val);
+  void printTree();
+  std::shared_ptr<Node> search(int val);
+  std::shared_ptr<Node> traverse(int val);
 
  private:
-  std::unique_ptr<Node> root;
+  std::shared_ptr<Node> root;
   int order;
 };
 
-BTree::BTree(int order)  :order(order) {
-  Node *n = new Node(order);
-  n->is_leaf = true;
-  root.reset(n);
+BTree::BTree(int order) : order(order) {
+  root = std::make_shared<Node>(order);
+  root->is_leaf = true;
 }
 
 BTree::~BTree() {}
 
-inline Node *BTree::traverse(int val) {
-  Node *cur = root.get();
+void BTree::printTree() {
+  using namespace std;
+
+  std::stack<std::shared_ptr<Node>> explore;
+  vector<int> level;
+  explore.emplace(root);
+  while (!explore.empty()) {
+    auto cur = explore.top();
+    explore.pop();
+    cout << "(";
+    for (int a = 0; a < cur->keys.size(); ++a) {
+      if (a != 0) {
+        cout << " ";
+      }
+      cout << cur->keys[a];
+    }
+    cout << ")";
+    for (auto it = cur->children.rbegin(); it!= cur->children.rend(); ++it) {
+      explore.emplace(*it);
+    }
+  }
+  cout << endl << endl;
+}
+
+inline std::shared_ptr<Node> BTree::traverse(int val) {
+  std::shared_ptr<Node> cur = root;
   while (!cur->is_leaf) {
     auto it = cur->children.begin();
     for (int i = 0; i < cur->keys.size() && val > cur->keys[i]; ++i) {
       ++it;
     }
-    cur = (*it).get();
+    cur = (*it);
   }
   return cur;
 }
 
 void BTree::insert(int val) {
-  Node *node = traverse(val);
+  std::shared_ptr<Node> node = traverse(val);
   auto it = node->keys.begin();
   int index = 0;
   for (; it != node->keys.end() && val > *it; ++it, ++index)
@@ -66,48 +96,102 @@ void BTree::insert(int val) {
   node->keys.insert(it, val);
   while (true) {
     if (node->keys.size() >= order) {
-      std::unique_ptr<Node> new_r;
-      Node *parent = node->parent;
+      std::shared_ptr<Node> parent = node->parent.lock();
       if (parent == nullptr) {
-        new_r.reset(new Node(order));
-        parent = new_r.get();
+        parent = std::make_shared<Node>(order);
+        parent->children.push_back(node);
+        root = parent;
       }
       if (node->is_leaf) {
         int middle_i = order / 2;
         int middle = node->keys[middle_i];
+
         auto it_k = parent->keys.begin();
         auto it_c = parent->children.begin();
-        for (; it_k != node->keys.end() && middle > *it_k; ++it_k, ++it_c)
+        for (; it_k != parent->keys.end() && middle > *it_k; ++it_k, ++it_c)
           ;
         parent->keys.insert(it_k, middle);
-        std::unique_ptr<Node> nl(new Node(order));
+        std::shared_ptr<Node> nl = std::make_shared<Node>(order);
         nl->is_leaf = true;
-        nl->right = node;
+        nl->right = node.get();
         nl->parent = parent;
         nl->keys.assign(node->keys.begin(), node->keys.begin() + middle_i);
-        node->keys.erase(node->keys.begin(), node->keys.begin() + middle_i + 1);
+        node->keys.erase(node->keys.begin(), node->keys.begin() + middle_i);
         node->parent = parent;
         parent->children.insert(it_c, std::move(nl));
+
       } else {
         int middle_i = order / 2;
         int middle = node->keys[middle_i];
-        std::unique_ptr<Node> left(new Node(order)), right(new Node(order));
-        left->parent = parent;
-        right->parent = parent;
-        left->keys.assign(node->keys.begin(), node->keys.begin() + middle_i);
-        right->keys.assign(node->keys.begin() + middle_i + 1, node->keys.end());
-        
+        auto it_k = parent->keys.begin();
+        auto it_c = parent->children.begin();
+        for (; it_k != parent->keys.end() && middle > *it_k; ++it_k, ++it_c)
+          ;
+        parent->keys.insert(it_k, middle);
+
+        std::shared_ptr<Node> nl = std::make_shared<Node>(order);
+        nl->parent = parent;
+        nl->keys.assign(node->keys.begin(), node->keys.begin() + middle_i);
+        node->keys.erase(node->keys.begin(), node->keys.begin() + middle_i + 1);
+        nl->children.assign(node->children.begin(),
+                            node->children.begin() + middle_i + 1);
+        node->children.erase(node->children.begin(),
+                             node->children.begin() + middle_i + 1);
+        for (auto &c : nl->children) {
+          c->parent = nl;
+        }
+        node->parent = parent;
+        parent->children.insert(it_c, std::move(nl));
       }
     } else {
       break;
     }
-    node = node->parent;
+    node = node->parent.lock();
   }
 }
 
-Node *BTree::search(int val) {
-  Node *leaf = traverse(val);
+std::shared_ptr<Node> BTree::search(int val) {
+  std::shared_ptr<Node> cur = traverse(val);
   return nullptr;
 }
 
-int main(int, char **) { std::cout << "Hello, world!\n"; }
+int main(int, char **) {
+  using namespace std;
+  int ORDER;
+  cin >> ORDER;
+
+  BTree bt(ORDER);
+  string line;
+  getline(cin, line);
+  while (getline(cin, line)) {
+    stringstream ss(line);
+    char op;
+    int x, N;
+    ss >> op;
+    switch (op) {
+      case 'i':
+
+        ss >> x;
+        bt.insert(x);
+        break;
+      case 's':
+
+        ss >> x;
+        break;
+      case 'p':
+        bt.printTree();
+        break;
+      case 'a':
+
+        ss >> x >> N;
+        break;
+      case 'q':
+        goto exitProg;
+        break;
+
+      default:
+        break;
+    }
+  }
+exitProg:;
+}
