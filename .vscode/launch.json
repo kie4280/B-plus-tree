@@ -10,7 +10,7 @@
             "request": "launch",
             // Resolved by CMake Tools:
             "program": "${command:cmake.launchTargetPath}",
-            "args": ["<", "dataset/0.in"],
+            "args": ["<", "dataset/5.in"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
