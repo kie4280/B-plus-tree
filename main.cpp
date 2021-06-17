@@ -25,6 +25,7 @@ struct Node {
     right = old.right;
     order = old.order;
     level = old.level;
+    is_leaf = old.is_leaf;
   }
 };
 
