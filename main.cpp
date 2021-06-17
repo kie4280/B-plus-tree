@@ -13,7 +13,6 @@ struct Node {
   bool is_leaf = false;
   std::vector<std::shared_ptr<Node>> children;
   std::vector<int> keys;
-  std::weak_ptr<Node> parent;
   int level = 0;
 
   Node(int order) : order(order) {
@@ -23,17 +22,17 @@ struct Node {
   Node(const Node &old) {
     children = old.children;
     keys = old.keys;
-    parent = old.parent;
     right = old.right;
     order = old.order;
+    level = old.level;
   }
 };
 
-class BTree {
+class BPTree {
  public:
-  BTree(int order);
-  ~BTree();
-  BTree(const BTree &old);
+  BPTree(int order);
+  ~BPTree();
+  BPTree(const BPTree &old);
   void insert(int val);
   void printTree();
   bool search(int val);
@@ -44,14 +43,14 @@ class BTree {
   int order;
 };
 
-BTree::BTree(int order) : order(order) {
+BPTree::BPTree(int order) : order(order) {
   root = std::make_shared<Node>(order);
   root->is_leaf = true;
 }
 
-BTree::~BTree() {}
+BPTree::~BPTree() {}
 
-void BTree::printTree() {
+void BPTree::printTree() {
   using namespace std;
 
   std::stack<std::shared_ptr<Node>> explore;
@@ -78,9 +77,11 @@ void BTree::printTree() {
   cout << endl;
 }
 
-void BTree::insert(int val) {
+void BPTree::insert(int val) {
   std::shared_ptr<Node> node = root;
+  std::stack<std::shared_ptr<Node>> path;
   while (!node->is_leaf) {
+    path.emplace(node);
     auto it = node->children.begin();
     for (int i = 0; i < node->keys.size() && val > node->keys[i]; ++i) {
       ++it;
@@ -94,17 +95,18 @@ void BTree::insert(int val) {
 
   node->keys.insert(it, val);
   while (node->keys.size() >= order) {
-    std::shared_ptr<Node> parent = node->parent.lock();
+    std::shared_ptr<Node> parent = path.empty() ? nullptr : path.top();
     if (parent == nullptr) {
       parent = std::make_shared<Node>(order);
       parent->children.push_back(node);
       root = parent;
       parent->level = node->level + 1;
+    } else {
+      path.pop();
     }
     if (node->is_leaf) {
       int middle_i = order / 2;
       int middle = node->keys[middle_i];
-
       auto it_k = parent->keys.begin();
       auto it_c = parent->children.begin();
       for (; it_k != parent->keys.end() && middle > *it_k; ++it_k, ++it_c)
@@ -113,10 +115,8 @@ void BTree::insert(int val) {
       std::shared_ptr<Node> nl = std::make_shared<Node>(order);
       nl->is_leaf = true;
       nl->right = node->right;
-      nl->parent = parent;
       nl->keys.assign(node->keys.begin() + middle_i, node->keys.end());
       node->keys.erase(node->keys.begin() + middle_i, node->keys.end());
-      node->parent = parent;
       node->right = nl.get();
       *(it_c) = std::move(nl);
       parent->children.insert(it_c, node);
@@ -129,9 +129,7 @@ void BTree::insert(int val) {
       for (; it_k != parent->keys.end() && middle > *it_k; ++it_k, ++it_c)
         ;
       parent->keys.insert(it_k, middle);
-
       std::shared_ptr<Node> nl = std::make_shared<Node>(order);
-      nl->parent = parent;
       nl->level = node->level;
       nl->keys.assign(node->keys.begin(), node->keys.begin() + middle_i);
       node->keys.erase(node->keys.begin(), node->keys.begin() + middle_i + 1);
@@ -139,18 +137,14 @@ void BTree::insert(int val) {
                           node->children.begin() + middle_i + 1);
       node->children.erase(node->children.begin(),
                            node->children.begin() + middle_i + 1);
-      for (auto &c : nl->children) {
-        c->parent = nl;
-      }
-      node->parent = parent;
       parent->children.insert(it_c, std::move(nl));
     }
 
-    node = node->parent.lock();
+    node = parent;
   }
 }
 
-bool BTree::search(int val) {
+bool BPTree::search(int val) {
   std::shared_ptr<Node> node = root;
   while (!node->is_leaf) {
     auto it = node->children.begin();
@@ -182,7 +176,7 @@ bool BTree::search(int val) {
   return found;
 }
 
-int BTree::seqAccess(int x, int N) {
+int BPTree::seqAccess(int x, int N) {
   std::shared_ptr<Node> node = root;
   while (!node->is_leaf) {
     auto it = node->children.begin();
@@ -227,7 +221,7 @@ int main(int, char **) {
   int ORDER;
   cin >> ORDER;
 
-  BTree bt(ORDER);
+  BPTree bt(ORDER);
   string line;
   getline(cin, line);
   while (getline(cin, line)) {
